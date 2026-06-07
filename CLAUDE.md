@@ -14,7 +14,15 @@ catalogue ([data.gov.ie](https://data.gov.ie)) as read-only tools. It wraps the 
 uv sync                       # install deps into .venv (Python 3.12)
 uv run data-gov-ie-mcp        # run the server over stdio (default transport)
 MCP_TRANSPORT=http MCP_PORT=8000 uv run data-gov-ie-mcp   # serve over streamable HTTP
+docker compose up --build     # build + run the HTTP server in a container (:8000/mcp)
 ```
+
+The `Dockerfile` (uv base image, multi-layer so deps cache separately from
+source) is HTTP-only by design: it sets `MCP_TRANSPORT=http`, `MCP_HOST=0.0.0.0`
+(stdio/127.0.0.1 defaults would make the container unreachable), and points
+`DATA_GOV_IE_LOG_FILE` at stderr so `docker logs` shows requests. The
+`HEALTHCHECK` is a TCP connect to the port — a GET on `/mcp` returns 406 (it
+wants POST), so a status-code check would be misleading.
 
 There is **no test suite** in the repo. To exercise the API layer manually, call the
 client directly rather than going through the MCP transport:
@@ -53,11 +61,13 @@ CKAN action needs POST or special handling. Mirror the new tool in the README's 
 
 ## Request logging
 
-`call_action` logs every outbound request to a rotating file (default
-`/tmp/data-gov-ie.log`, override with `DATA_GOV_IE_LOG_FILE`): a `CALL` line with the
-action and params, then exactly one outcome line — `OK` (with latency + HTTP status) or
-`FAIL` (with the error reason). The logger sets `propagate = False` on purpose: under the
+Request logging is **off by default**. Set `DATA_GOV_IE_LOG_FILE` to a path to enable
+it; `call_action` then logs every outbound request to that rotating file: a `CALL` line
+with the action and params, then exactly one outcome line — `OK` (with latency + HTTP
+status) or `FAIL` (with the error reason). With no path set, the logger gets a
+`NullHandler` and stays silent. It also sets `propagate = False` on purpose: under the
 stdio transport, stdout *is* the MCP wire protocol, so request logs must never leak there.
+The Docker images set `DATA_GOV_IE_LOG_FILE=/dev/stderr` so `docker logs` shows requests.
 
 ## Working with the live server
 
@@ -74,4 +84,4 @@ by calling the client directly (above) rather than assuming the live tools refle
 | `MCP_TRANSPORT` | `stdio` | `stdio` or `http`. |
 | `MCP_HOST` / `MCP_PORT` | `127.0.0.1` / `8000` | HTTP bind address. |
 | `DATA_GOV_IE_BASE_URL` | `https://data.gov.ie` | Point at another CKAN instance/mirror. |
-| `DATA_GOV_IE_LOG_FILE` | `/tmp/data-gov-ie.log` | Request log destination. |
+| `DATA_GOV_IE_LOG_FILE` | _(unset)_ | Request log destination. Unset disables request logging. |

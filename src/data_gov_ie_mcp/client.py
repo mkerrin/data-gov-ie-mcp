@@ -28,10 +28,10 @@ API_PATH = "/api/3/action/"
 
 _USER_AGENT = "data-gov-ie-mcp/0.1 (+https://github.com/opendatamcp)"
 
-# Every outbound call to data.gov.ie is logged here. Override the path with
-# DATA_GOV_IE_LOG_FILE; the rotating handler keeps the log from growing without
-# bound while staying append-friendly across server restarts.
-DEFAULT_LOG_FILE = "/tmp/data-gov-ie.log"
+# Outbound calls to data.gov.ie are logged to a file only when
+# DATA_GOV_IE_LOG_FILE is set; with no path configured, request logging is off.
+# When enabled, the rotating handler keeps the log from growing without bound
+# while staying append-friendly across server restarts.
 
 
 def _build_logger() -> logging.Logger:
@@ -39,7 +39,15 @@ def _build_logger() -> logging.Logger:
     logger.setLevel(logging.INFO)
     logger.propagate = False  # don't leak request logs onto stdio (MCP transport)
 
-    log_file = os.environ.get("DATA_GOV_IE_LOG_FILE", DEFAULT_LOG_FILE)
+    log_file = os.environ.get("DATA_GOV_IE_LOG_FILE")
+    if not log_file:
+        # No destination configured: disable request logging entirely. The
+        # NullHandler keeps the logger quiet without warnings about missing
+        # handlers.
+        if not any(isinstance(h, logging.NullHandler) for h in logger.handlers):
+            logger.addHandler(logging.NullHandler())
+        return logger
+
     # Guard against duplicate handlers if this module is imported more than once.
     already = any(
         isinstance(h, RotatingFileHandler)

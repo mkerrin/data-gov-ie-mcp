@@ -30,6 +30,22 @@ To serve over streamable HTTP instead (same tool code):
 MCP_TRANSPORT=http MCP_PORT=8000 uv run data-gov-ie-mcp
 ```
 
+## Docker
+
+Build and run the HTTP server in a container (endpoint at
+`http://127.0.0.1:8000/mcp`):
+
+```bash
+docker compose up --build          # or: docker build -t data-gov-ie-mcp . && \
+                                   #     docker run -p 8000:8000 data-gov-ie-mcp
+```
+
+The image bakes in the HTTP transport and binds `0.0.0.0` so the port is
+reachable from the host (the bare code defaults to `127.0.0.1`, which a
+container won't expose). Request logs go to stderr, so `docker logs` shows
+them. Override any [env var](#configuration) with `-e` / the compose
+`environment:` block.
+
 ## Use it in Claude Code
 
 Register the server as a local stdio MCP:
