@@ -35,32 +35,60 @@ _READONLY = {"readOnlyHint": True, "idempotentHint": True, "openWorldHint": True
 @mcp.tool(annotations=_READONLY)
 async def package_search(
     q: Annotated[
-        str, Field(description="Search query, e.g. 'museum' or 'housing dublin'.")
+        str,
+        Field(
+            description=(
+                "Solr search query. Free text ('housing dublin'), a quoted "
+                "phrase ('\"electric vehicles\"'), or a fielded query "
+                "('title:census'). Defaults to '*:*' (match everything)."
+            )
+        ),
     ] = "*:*",
     rows: Annotated[
-        int, Field(ge=1, le=100, description="Max datasets to return.")
+        int, Field(ge=1, le=100, description="Max datasets to return per page (1-100).")
     ] = 10,
     start: Annotated[
-        int, Field(ge=0, description="Offset into the result set, for paging.")
+        int,
+        Field(
+            ge=0,
+            description=(
+                "Offset into the result set, for paging; use with rows "
+                "(e.g. rows=10, start=10 for page 2)."
+            ),
+        ),
     ] = 0,
     fq: Annotated[
         str | None,
         Field(
             description=(
-                "Optional CKAN filter query, e.g. "
-                "'organization:central-statistics-office' or 'res_format:CSV'."
+                "CKAN facet filter query; space-separate several to AND them. "
+                "Examples: 'organization:central-statistics-office', "
+                "'res_format:CSV', 'groups:housing', 'tags:covid-19'. Get valid "
+                "values from organization_list, group_list and tag_list."
             )
         ),
     ] = None,
     sort: Annotated[
         str | None,
-        Field(description="Sort order, e.g. 'metadata_modified desc' or 'score desc'."),
+        Field(
+            description=(
+                "Solr sort order as 'field direction'. Examples: 'score desc' "
+                "(relevance), 'metadata_modified desc' (most recently updated), "
+                "'title_string asc'."
+            )
+        ),
     ] = None,
 ) -> dict[str, Any]:
-    """Search the data.gov.ie dataset catalogue.
+    """Search the data.gov.ie dataset catalogue — the primary discovery tool.
 
-    Returns a `count` (total matches) and a `results` list of dataset metadata.
-    This is the primary discovery tool — start here when looking for data.
+    Start here whenever you're looking for data. Returns `count` (total matches)
+    and a `results` list of full dataset metadata (title, notes, organization,
+    tags, groups, and each dataset's resources with download URLs).
+
+    Use `q` for Solr free-text/fielded search and `fq` to filter by facet
+    (organization, groups, tags, res_format). Page large result sets with
+    `rows` + `start`. Follow up with package_show on a result's `name` for the
+    complete record.
     """
     return await call_action(
         "package_search",
@@ -74,15 +102,19 @@ async def package_show(
         str,
         Field(
             description=(
-                "Dataset name (slug) or id, e.g. 'the-walled-towns-of-ireland'. "
-                "Get these from package_search results."
+                "Dataset name (slug) or id from a package_search result, "
+                "e.g. 'the-walled-towns-of-ireland'."
             )
         ),
     ],
 ) -> dict[str, Any]:
-    """Get the full metadata for one dataset, including all of its resources.
+    """Get the full record for one dataset, including all of its resources.
 
-    Each resource lists a downloadable URL and format (CSV, JSON, API, etc.).
+    Returns complete metadata (title, description, publisher organization, tags,
+    groups, licence, temporal/spatial coverage) plus a `resources` list. Each
+    resource carries a download `url` and `format` (CSV, JSON, XLSX, GeoJSON,
+    API, …); resources with `datastore_active: true` are additionally queryable.
+    Look the dataset up via package_search first and pass its `name` here.
     """
     return await call_action("package_show", {"id": id})
 
@@ -94,10 +126,12 @@ async def package_list(
     ] = 100,
     offset: Annotated[int, Field(ge=0, description="Offset for paging.")] = 0,
 ) -> list[str]:
-    """List dataset names (slugs) in the catalogue.
+    """List raw dataset names (slugs) in the catalogue, paged.
 
-    The catalogue holds thousands of datasets, so this is paged — prefer
-    package_search when you have any idea what you're looking for.
+    Returns just the slugs — no metadata. The catalogue holds 20,000+ datasets,
+    so this is rarely what you want: prefer package_search whenever you have any
+    notion of the topic, publisher or format. Use this only to enumerate or
+    count the entire catalogue.
     """
     return await call_action("package_list", {"limit": limit, "offset": offset})
 
@@ -108,8 +142,10 @@ async def resource_search(
         str,
         Field(
             description=(
-                "Field-scoped query of the form 'field:term', e.g. "
-                "'name:Walled Towns' or 'format:CSV'."
+                "Field-scoped query of the form 'field:term'. Searchable fields "
+                "include name, description, format and url — e.g. 'format:CSV', "
+                "'name:census', 'name:Walled Towns'. Plain text without a "
+                "'field:' prefix will not match."
             )
         ),
     ],
@@ -118,10 +154,12 @@ async def resource_search(
     ] = 10,
     offset: Annotated[int, Field(ge=0, description="Offset for paging.")] = 0,
 ) -> dict[str, Any]:
-    """Search for individual resources (files / API endpoints) across datasets.
+    """Search individual resources (files / API endpoints) across all datasets.
 
-    Returns `count` and a `results` list of resources. Use when you want a
-    specific file rather than a whole dataset.
+    Use when you want a specific file rather than a whole dataset. Returns
+    `count` and a `results` list of resource objects, each with a download
+    `url`, `format`, `name`/`description` and parent `package_id` (pass that to
+    package_show for the owning dataset).
     """
     return await call_action(
         "resource_search", {"query": query, "limit": limit, "offset": offset}
@@ -139,7 +177,11 @@ async def tag_list(
         Field(description="If true, return full tag objects instead of names only."),
     ] = False,
 ) -> list[Any]:
-    """List tags used across the catalogue, optionally filtered by substring."""
+    """List tags used across the catalogue, optionally filtered by substring.
+
+    Returns tag names (or full tag objects when all_fields=True). The names
+    double as valid values for package_search's `fq` filter as 'tags:<name>'.
+    """
     return await call_action(
         "tag_list", {"query": query, "all_fields": all_fields}
     )
@@ -153,7 +195,11 @@ async def tag_show(
         Field(description="If true, include the datasets carrying this tag."),
     ] = False,
 ) -> dict[str, Any]:
-    """Get details for a single tag, optionally with the datasets that use it."""
+    """Get details for a single tag, optionally with the datasets that carry it.
+
+    With include_datasets=True the response embeds the tagged datasets, making
+    this a quick way to browse everything filed under one tag.
+    """
     return await call_action(
         "tag_show", {"id": id, "include_datasets": include_datasets}
     )
@@ -172,7 +218,9 @@ async def organization_list(
 ) -> list[Any]:
     """List the organizations (data publishers) in the catalogue.
 
-    Useful for building an 'organization:<name>' filter for package_search.
+    Returns publisher slugs (or full objects with titles and dataset counts
+    when all_fields=True). Use a slug to build an 'organization:<slug>' `fq`
+    filter for package_search (e.g. 'central-statistics-office').
     """
     return await call_action(
         "organization_list",
@@ -193,7 +241,8 @@ async def group_list(
 ) -> list[Any]:
     """List the groups (themes / categories) in the catalogue.
 
-    Useful for building a 'groups:<name>' filter for package_search.
+    Returns group slugs (or full objects when all_fields=True). Use a slug to
+    build a 'groups:<slug>' `fq` filter for package_search.
     """
     return await call_action(
         "group_list",
