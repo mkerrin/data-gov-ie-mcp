@@ -11,7 +11,6 @@ services:
       MCP_TRANSPORT: http
       MCP_HOST: 0.0.0.0
       MCP_PORT: "8000"
-      DATA_GOV_IE_LOG_FILE: /dev/stderr
       # Point at another CKAN instance/mirror without rebuilding:
       # DATA_GOV_IE_BASE_URL: https://data.gov.ie
     restart: unless-stopped

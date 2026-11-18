@@ -13,9 +13,7 @@ any failure.
 
 from __future__ import annotations
 
-import logging
 import os
-import time
 from typing import Any
 
 import httpx
@@ -26,11 +24,6 @@ DEFAULT_BASE_URL = "https://data.gov.ie"
 API_PATH = "/api/3/action/"
 
 _USER_AGENT = "data-gov-ie-mcp/0.1 (+https://github.com/opendatamcp)"
-
-# Outbound calls to data.gov.ie are logged to a file only when
-# DATA_GOV_IE_LOG_FILE is set; with no path configured, request logging is off.
-# When enabled, the rotating handler keeps the log from growing without bound
-# while staying append-friendly across server restarts.
 
 
 class CKANError(ToolError):
@@ -51,11 +44,6 @@ async def call_action(action: str, params: dict[str, Any] | None = None) -> Any:
     """
     query = {k: v for k, v in (params or {}).items() if v is not None}
     url = f"{_base_url()}{API_PATH}{action}"
-
-    started = time.monotonic()
-
-    def _elapsed_ms() -> int:
-        return round((time.monotonic() - started) * 1000)
 
     try:
         async with httpx.AsyncClient(timeout=30.0) as http:
