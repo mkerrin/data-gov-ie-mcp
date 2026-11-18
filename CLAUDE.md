@@ -15,12 +15,12 @@ uv sync                       # install deps into .venv (Python 3.12)
 uv run data-gov-ie-mcp        # run the server over stdio (default transport)
 MCP_TRANSPORT=http MCP_PORT=8000 uv run data-gov-ie-mcp   # serve over streamable HTTP
 docker compose up --build     # build + run the HTTP server in a container (:8000/mcp)
+./scripts/publish.sh <tag>    # build + push michaelkerrin/data-gov-ie-mcp:<tag> to Docker Hub
 ```
 
 The `Dockerfile` (uv base image, multi-layer so deps cache separately from
 source) is HTTP-only by design: it sets `MCP_TRANSPORT=http`, `MCP_HOST=0.0.0.0`
-(stdio/127.0.0.1 defaults would make the container unreachable), and points
-`DATA_GOV_IE_LOG_FILE` at stderr so `docker logs` shows requests. The
+(stdio/127.0.0.1 defaults would make the container unreachable). The
 `HEALTHCHECK` is a TCP connect to the port — a GET on `/mcp` returns 406 (it
 wants POST), so a status-code check would be misleading.
 
@@ -59,16 +59,6 @@ describe each parameter with `Annotated[type, Field(description=...)]`, and retu
 `await call_action("<ckan_action>", {...})`. No client changes are needed unless the
 CKAN action needs POST or special handling. Mirror the new tool in the README's tool table.
 
-## Request logging
-
-Request logging is **off by default**. Set `DATA_GOV_IE_LOG_FILE` to a path to enable
-it; `call_action` then logs every outbound request to that rotating file: a `CALL` line
-with the action and params, then exactly one outcome line — `OK` (with latency + HTTP
-status) or `FAIL` (with the error reason). With no path set, the logger gets a
-`NullHandler` and stays silent. It also sets `propagate = False` on purpose: under the
-stdio transport, stdout *is* the MCP wire protocol, so request logs must never leak there.
-The Docker images set `DATA_GOV_IE_LOG_FILE=/dev/stderr` so `docker logs` shows requests.
-
 ## Working with the live server
 
 The server is registered as a local stdio MCP (see `.mcp.json`) and launched via
@@ -84,4 +74,3 @@ by calling the client directly (above) rather than assuming the live tools refle
 | `MCP_TRANSPORT` | `stdio` | `stdio` or `http`. |
 | `MCP_HOST` / `MCP_PORT` | `127.0.0.1` / `8000` | HTTP bind address. |
 | `DATA_GOV_IE_BASE_URL` | `https://data.gov.ie` | Point at another CKAN instance/mirror. |
-| `DATA_GOV_IE_LOG_FILE` | _(unset)_ | Request log destination. Unset disables request logging. |

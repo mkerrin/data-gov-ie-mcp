@@ -16,7 +16,6 @@ from __future__ import annotations
 import logging
 import os
 import time
-from logging.handlers import RotatingFileHandler
 from typing import Any
 
 import httpx
@@ -32,40 +31,6 @@ _USER_AGENT = "data-gov-ie-mcp/0.1 (+https://github.com/opendatamcp)"
 # DATA_GOV_IE_LOG_FILE is set; with no path configured, request logging is off.
 # When enabled, the rotating handler keeps the log from growing without bound
 # while staying append-friendly across server restarts.
-
-
-def _build_logger() -> logging.Logger:
-    logger = logging.getLogger("data_gov_ie_mcp.calls")
-    logger.setLevel(logging.INFO)
-    logger.propagate = False  # don't leak request logs onto stdio (MCP transport)
-
-    log_file = os.environ.get("DATA_GOV_IE_LOG_FILE")
-    if not log_file:
-        # No destination configured: disable request logging entirely. The
-        # NullHandler keeps the logger quiet without warnings about missing
-        # handlers.
-        if not any(isinstance(h, logging.NullHandler) for h in logger.handlers):
-            logger.addHandler(logging.NullHandler())
-        return logger
-
-    # Guard against duplicate handlers if this module is imported more than once.
-    already = any(
-        isinstance(h, RotatingFileHandler)
-        and getattr(h, "baseFilename", None) == os.path.abspath(log_file)
-        for h in logger.handlers
-    )
-    if not already:
-        handler = RotatingFileHandler(
-            log_file, maxBytes=5 * 1024 * 1024, backupCount=3, encoding="utf-8"
-        )
-        handler.setFormatter(
-            logging.Formatter("%(asctime)s %(levelname)s %(message)s")
-        )
-        logger.addHandler(handler)
-    return logger
-
-
-_logger = _build_logger()
 
 
 class CKANError(ToolError):
@@ -87,7 +52,6 @@ async def call_action(action: str, params: dict[str, Any] | None = None) -> Any:
     query = {k: v for k, v in (params or {}).items() if v is not None}
     url = f"{_base_url()}{API_PATH}{action}"
 
-    _logger.info("CALL action=%s params=%s", action, query)
     started = time.monotonic()
 
     def _elapsed_ms() -> int:
@@ -99,29 +63,17 @@ async def call_action(action: str, params: dict[str, Any] | None = None) -> Any:
                 url, params=query, headers={"User-Agent": _USER_AGENT}
             )
     except httpx.RequestError as exc:  # network/DNS/timeout
-        _logger.error(
-            "FAIL action=%s ms=%d error=request_error detail=%s",
-            action, _elapsed_ms(), exc,
-        )
         raise CKANError(f"Could not reach data.gov.ie: {exc}") from exc
 
     # CKAN returns a JSON error envelope even on 4xx/409, so try to parse first.
     try:
         body = resp.json()
     except ValueError:
-        _logger.error(
-            "FAIL action=%s ms=%d status=%d error=non_json",
-            action, _elapsed_ms(), resp.status_code,
-        )
         raise CKANError(
             f"data.gov.ie returned a non-JSON response (HTTP {resp.status_code})."
         ) from None
 
     if not isinstance(body, dict):
-        _logger.error(
-            "FAIL action=%s ms=%d status=%d error=unexpected_json_shape",
-            action, _elapsed_ms(), resp.status_code,
-        )
         raise CKANError(
             f"data.gov.ie returned an unexpected response shape (HTTP {resp.status_code})."
         )
@@ -129,13 +81,6 @@ async def call_action(action: str, params: dict[str, Any] | None = None) -> Any:
     if not body.get("success", False):
         error = body.get("error", {})
         message = error.get("message") or error.get("__type") or "Unknown CKAN error"
-        _logger.error(
-            "FAIL action=%s ms=%d status=%d error=%s",
-            action, _elapsed_ms(), resp.status_code, message,
-        )
         raise CKANError(f"CKAN action '{action}' failed: {message}")
 
-    _logger.info(
-        "OK   action=%s ms=%d status=%d", action, _elapsed_ms(), resp.status_code
-    )
     return body.get("result")
